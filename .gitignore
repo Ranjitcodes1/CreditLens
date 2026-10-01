@@ -1,0 +1,49 @@
+# Python Virtual Environment
+.venv/
+env/
+venv/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Data directories (keep directory structure with .gitkeep)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+*.csv
+*.parquet
+*.feather
+*.zip
+*.tar.gz
+*.gz
+
+# Model Artifacts (keep directory structure with .gitkeep)
+models/*
+!models/.gitkeep
+*.joblib
+*.pkl
+
+# Visualization & App outputs
+reports/figures/*
+!reports/figures/.gitkeep
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Streamlit temporary config / credentials
+.streamlit/secrets.toml
