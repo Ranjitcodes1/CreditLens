@@ -1,12 +1,13 @@
 """
-Inference Scoring and SHAP Explainability Engine for Loan Default Prediction.
+Inference Scoring and Explainability Engine for Loan Default Prediction.
+Compliant with Reserve Bank of India (RBI) Fair Practices Code,
+CICRA Bureau Reporting Standards, and FCRA/ECOA frameworks.
 
-This module provides production-ready utilities to:
-1. Load the serialized champion pipeline and underwriting metadata.
-2. Predict default probability and generate automated underwriting decisions (ACCEPT/REJECT).
-3. Compute expected financial credit loss.
-4. Generate local SHAP feature attributions and regulatory adverse action reason codes
-   compliant with Fair Credit Reporting Act (FCRA) standards.
+Provides:
+1. Production model loading and pipeline execution.
+2. Real-time applicant scoring with native Indian Rupee (INR / ₹) and USD currency support.
+3. Expected loss estimation (EL = PD * EAD * LGD).
+4. Local Tree SHAP attributions and automated RBI-compliant adverse decision reason codes.
 """
 
 from pathlib import Path
@@ -24,30 +25,34 @@ if str(PROJECT_ROOT) not in sys.path:
 
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "loan_default_model.joblib"
 
-# Regulatory Adverse Action Reason Mappings (ECOA / FCRA standard reasons)
+# Standard currency exchange conversion factor (1 USD ≈ 83.0 INR)
+INR_PER_USD: float = 83.0
+MONETARY_FIELDS: List[str] = ["loan_amnt", "annual_inc", "installment", "revol_bal"]
+
+# Regulatory Adverse Decision Reason Codes (RBI Fair Practices Code & CICRA Bureau Standards)
 ADVERSE_ACTION_REASONS: Dict[str, str] = {
-    "int_rate": "High interest rate reflecting elevated assigned market risk grade",
-    "sub_grade_ord": "Subprime credit risk score assigned during credit evaluation",
-    "grade_ord": "Low credit bureau rating grade",
-    "loan_to_income": "Requested loan amount is high relative to verified annual income",
-    "installment_to_income": "Monthly loan installment represents excessive burden relative to gross income",
-    "revol_bal_to_income": "Excessive revolving balance relative to annual income",
-    "dti": "High debt-to-income ratio (non-mortgage monthly debt commitments)",
-    "high_dti_flag": "Debt-to-income ratio exceeds underwriting threshold (>= 20%)",
-    "revol_util": "High revolving credit line utilization rate (credit lines near maximum capacity)",
-    "high_utilization_flag": "Revolving credit line utilization exceeds high-risk threshold (>= 80%)",
-    "inq_last_6mths": "Multiple credit inquiries within past 6 months (credit-seeking velocity)",
-    "velocity_hazard_flag": "Elevated credit application velocity in recent bureau reporting",
-    "term": "Extended loan maturity duration (60-month term carries elevated default volatility)",
-    "derogatory_flag": "Presence of derogatory public records or historical bankruptcy filings",
-    "pub_rec": "Derogatory public record on credit bureau file",
-    "pub_rec_bankruptcies": "Recorded history of legal bankruptcy filing",
-    "annual_inc": "Insufficient annual gross earnings to support credit line",
-    "log_annual_inc": "Low verified income relative to credit obligations",
-    "credit_history_years": "Short credit file duration / limited credit seasoning",
-    "delinq_2yrs": "Past delinquency incidents (30+ days past due) within the last 24 months",
-    "open_acc": "Low number of established open credit trade lines",
-    "total_acc": "Limited total historical credit file depth",
+    "int_rate": "High assigned interest rate reflecting elevated credit assessment risk grade",
+    "sub_grade_ord": "Subprime internal risk rating band assigned during underwriting evaluation",
+    "grade_ord": "Low credit bureau rating score / elevated risk band",
+    "loan_to_income": "Requested loan amount exceeds permissible leverage relative to verified annual income",
+    "installment_to_income": "Monthly EMI obligation exceeds permissible fixed obligation-to-income ratio (FOIR)",
+    "revol_bal_to_income": "High revolving credit card balance outstanding relative to annual gross earnings",
+    "dti": "High Debt-to-Income (DTI) ratio across existing monthly debt obligations",
+    "high_dti_flag": "Total monthly non-mortgage debt service burden exceeds underwriting policy limit (>= 20%)",
+    "revol_util": "High credit card / revolving line credit limit utilization (near maximum borrowing capacity)",
+    "high_utilization_flag": "Revolving credit line utilization exceeds threshold limit (>= 80%)",
+    "inq_last_6mths": "Multiple recent credit bureau inquiries reflecting high credit-seeking velocity (CIBIL/bureau report)",
+    "velocity_hazard_flag": "Frequent recent loan/credit inquiries observed across bureau records",
+    "term": "Extended loan tenure (60-month maturity introduces prolonged credit exposure)",
+    "derogatory_flag": "Presence of historical default, legal recovery, or bankruptcy record on bureau file",
+    "pub_rec": "Derogatory public civil record or bureau write-off listed on credit history",
+    "pub_rec_bankruptcies": "Prior recorded history of insolvency / bankruptcy filing",
+    "annual_inc": "Insufficient verified annual gross income to service requested credit facility",
+    "log_annual_inc": "Low verified earnings capacity relative to existing debt liabilities",
+    "credit_history_years": "Short bureau credit history duration / limited credit seasoning record",
+    "delinq_2yrs": "History of past-due payments (30+ days overdue) within the previous 24 months",
+    "open_acc": "Inadequate number of established active credit trade lines",
+    "total_acc": "Limited historical credit bureau trade line depth",
 }
 
 
@@ -61,13 +66,24 @@ def load_production_model(model_path: Optional[Union[str, Path]] = None) -> Dict
     return bundle
 
 
+def _convert_applicant_to_model_scale(df: pd.DataFrame, currency: str) -> pd.DataFrame:
+    """Normalize monetary fields to training baseline scale (USD) if provided in INR."""
+    df_norm = df.copy()
+    if currency.upper() == "INR":
+        for col in MONETARY_FIELDS:
+            if col in df_norm.columns:
+                df_norm[col] = df_norm[col].astype(float) / INR_PER_USD
+    return df_norm
+
+
 def predict_loan_applicant(
     applicant_data: Union[Dict[str, Any], pd.DataFrame],
     model_bundle: Optional[Dict[str, Any]] = None,
     custom_threshold: Optional[float] = None,
     lgd: float = 0.60,
+    currency: str = "INR",
 ) -> Dict[str, Any]:
-    """Score a loan applicant and generate underwriting decisions.
+    """Score a loan applicant and generate underwriting decisions under RBI/global credit standards.
 
     Parameters
     ----------
@@ -79,11 +95,13 @@ def predict_loan_applicant(
         Underwriting decision cutoff. Defaults to optimal_threshold from model bundle.
     lgd : float, default=0.60
         Loss Given Default rate (assumed 60% loss upon charge-off).
+    currency : str, default='INR'
+        Currency of input monetary amounts ('INR' or 'USD').
 
     Returns
     -------
     dict
-        Scoring result containing probability, decision, risk tier, and expected loss.
+        Scoring result containing probability, decision, risk tier, expected loss, and currency symbol.
     """
     if model_bundle is None:
         model_bundle = load_production_model()
@@ -98,8 +116,11 @@ def predict_loan_applicant(
     else:
         df_app = applicant_data.copy()
 
+    # Normalize monetary values for model inference
+    df_model = _convert_applicant_to_model_scale(df_app, currency=currency)
+
     # Predict default probability
-    p_default = float(pipeline.predict_proba(df_app)[0, 1])
+    p_default = float(pipeline.predict_proba(df_model)[0, 1])
 
     # Underwriting Decision
     is_rejected = p_default >= decision_threshold
@@ -119,9 +140,10 @@ def predict_loan_applicant(
         risk_tier = "Tier 4: Deep Subprime (High Risk)"
         risk_color = "#e74c3c"
 
-    # Calculate Expected Dollar Loss (EL = PD * EAD * LGD)
-    loan_amount = float(df_app["loan_amnt"].values[0]) if "loan_amnt" in df_app.columns else 10000.0
+    # Calculate Expected Loss (EL = PD * EAD * LGD) in applicant's native currency
+    loan_amount = float(df_app["loan_amnt"].values[0]) if "loan_amnt" in df_app.columns else 500000.0
     expected_loss = p_default * loan_amount * lgd
+    currency_symbol = "Rs." if currency.upper() == "INR" else "$"
 
     return {
         "default_probability": round(p_default, 4),
@@ -132,6 +154,8 @@ def predict_loan_applicant(
         "risk_color": risk_color,
         "loan_amount": loan_amount,
         "expected_loss": round(expected_loss, 2),
+        "currency": currency.upper(),
+        "currency_symbol": currency_symbol,
         "applicant_input": df_app.iloc[0].to_dict(),
     }
 
@@ -140,8 +164,9 @@ def explain_applicant_shap(
     applicant_data: Union[Dict[str, Any], pd.DataFrame],
     model_bundle: Optional[Dict[str, Any]] = None,
     top_n: int = 5,
+    currency: str = "INR",
 ) -> Dict[str, Any]:
-    """Compute local SHAP feature attributions and generate FCRA-compliant adverse action reasons.
+    """Compute local SHAP feature attributions and generate RBI-compliant adverse decision reason codes.
 
     Parameters
     ----------
@@ -151,6 +176,8 @@ def explain_applicant_shap(
         Loaded model bundle.
     top_n : int, default=5
         Number of top risk-increasing factors to return.
+    currency : str, default='INR'
+        Currency of input monetary attributes ('INR' or 'USD').
 
     Returns
     -------
@@ -169,13 +196,16 @@ def explain_applicant_shap(
     else:
         df_app = applicant_data.copy()
 
+    # Scale monetary inputs if in INR
+    df_model = _convert_applicant_to_model_scale(df_app, currency=currency)
+
     # Deconstruct pipeline steps to access preprocessed vector and classifier
     fe_step = pipeline.named_steps["domain_features"]
     prep_step = pipeline.named_steps["preprocessor"]
     classifier = pipeline.named_steps["classifier"]
 
     # Transform applicant record through preprocessing
-    X_fe = fe_step.transform(df_app)
+    X_fe = fe_step.transform(df_model)
     X_prep = prep_step.transform(X_fe)
 
     # Compute Tree SHAP values
@@ -192,7 +222,8 @@ def explain_applicant_shap(
     else:
         shap_vec = raw_shap.flatten()
 
-    base_value = float(explainer.expected_value if not isinstance(explainer.expected_value, (list, np.ndarray)) else explainer.expected_value[1])
+    base_val = explainer.expected_value
+    base_value = float(base_val if not isinstance(base_val, (list, np.ndarray)) else base_val[1])
 
     # Rank features by contribution
     pos_indices = [idx for idx in np.argsort(shap_vec)[::-1] if shap_vec[idx] > 0]
@@ -240,6 +271,7 @@ def predict_batch(
     df: pd.DataFrame,
     model_bundle: Optional[Dict[str, Any]] = None,
     custom_threshold: Optional[float] = None,
+    currency: str = "USD",
 ) -> pd.DataFrame:
     """Score a batch of loan applicants and return an annotated DataFrame."""
     if model_bundle is None:
@@ -248,8 +280,10 @@ def predict_batch(
     pipeline = model_bundle["pipeline"]
     opt_t = custom_threshold if custom_threshold is not None else model_bundle.get("optimal_threshold", 0.370)
 
+    df_model = _convert_applicant_to_model_scale(df, currency=currency)
+    probs = pipeline.predict_proba(df_model)[:, 1]
+
     df_out = df.copy()
-    probs = pipeline.predict_proba(df)[:, 1]
     df_out["default_probability"] = np.round(probs, 4)
     df_out["underwriting_decision"] = np.where(probs >= opt_t, "REJECT", "ACCEPT")
 

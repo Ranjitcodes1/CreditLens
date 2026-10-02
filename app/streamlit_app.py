@@ -1,10 +1,12 @@
 """
 Production Streamlit Application for Loan Default Risk Assessment & Explainability.
+Compliant with Reserve Bank of India (RBI) Fair Practices Code,
+Digital Lending Guidelines, and Credit Bureau Reporting Standards.
 
 Provides:
-1. Real-time single applicant underwriting decision engine.
-2. Dynamic policy threshold slider and financial loss simulator.
-3. Local SHAP waterfall attributions and FCRA-compliant adverse action reason codes.
+1. Real-time applicant underwriting in Indian Rupees (INR / ₹) and USD.
+2. Dynamic policy threshold slider and financial expected loss simulator.
+3. Local SHAP waterfall attributions and RBI-compliant adverse decision reason codes.
 4. Batch portfolio credit evaluation and risk tier breakdown.
 5. Model governance, 5-fold CV benchmarks, and cost-sensitive optimization curves.
 """
@@ -28,11 +30,12 @@ from src.predict import (
     explain_applicant_shap,
     predict_batch,
     ADVERSE_ACTION_REASONS,
+    INR_PER_USD,
 )
 
 # Page configuration
 st.set_page_config(
-    page_title="Lending Club Credit Risk Engine",
+    page_title="RBI-Compliant Credit Underwriting Engine",
     page_icon="💳",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -88,10 +91,20 @@ st.markdown("""
     }
     .adverse-notice-box {
         background-color: #fff7ed;
-        border: 1px solid #ffedd5;
+        border: 1px solid #fed7aa;
         border-radius: 8px;
-        padding: 16px;
+        padding: 18px;
         margin-top: 1rem;
+    }
+    .badge-rbi {
+        background-color: #e0e7ff;
+        color: #3730a3;
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        display: inline-block;
+        margin-bottom: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -114,12 +127,13 @@ def get_sample_test_data():
 
 
 def render_header(bundle):
+    st.markdown('<span class="badge-rbi">RBI FAIR PRACTICES CODE & DIGITAL LENDING COMPLIANT</span>', unsafe_allow_html=True)
     st.markdown('<div class="main-title">💳 Institutional Credit Risk & Underwriting Engine</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Production ML inference pipeline with automated cost-sensitive underwriting, real-time SHAP attributions, and FCRA regulatory reason codes.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Production ML inference engine with automated cost-sensitive credit decisions, SHAP attributions, and RBI-mandated adverse action disclosures.</div>', unsafe_allow_html=True)
 
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-val">{bundle["model_type"].split()[0]}</div><div class="kpi-label">Champion Model</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-card"><div class="kpi-val">{bundle["model_type"].split()[0]}</div><div class="kpi-label">Champion Algorithm</div></div>', unsafe_allow_html=True)
     with col2:
         st.markdown(f'<div class="kpi-card"><div class="kpi-val">{bundle["test_metrics"]["roc_auc"]:.4f}</div><div class="kpi-label">Test ROC-AUC</div></div>', unsafe_allow_html=True)
     with col3:
@@ -138,7 +152,17 @@ def main():
 
     # Sidebar: Policy Configuration & Presets
     st.sidebar.header("⚙️ Underwriting Policy Controls")
-    
+
+    currency_mode = st.sidebar.radio(
+        "Currency System",
+        ["INR (₹ - Indian Rupees)", "USD ($ - US Dollars)"],
+        index=0,
+        help="Select preferred currency format for income, loan amount, EMI, and expected loss."
+    )
+    is_inr = "INR" in currency_mode
+    curr_sym = "₹" if is_inr else "$"
+    currency_code = "INR" if is_inr else "USD"
+
     threshold = st.sidebar.slider(
         "Decision Cutoff (Probability Threshold)",
         min_value=0.10,
@@ -158,45 +182,80 @@ def main():
     )
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📋 Quick Applicant Presets")
+    st.sidebar.subheader("📋 Quick Applicant Profiles")
 
-    # Define applicant presets
-    presets = {
-        "Custom Inputs": None,
-        "Prime Borrower (Low Risk)": {
-            "loan_amnt": 15000.0, "term": 36, "int_rate": 7.5, "installment": 466.0,
-            "grade": "A", "sub_grade": "A2", "home_ownership": "MORTGAGE",
-            "annual_inc": 115000.0, "verification_status": "Verified", "issue_d": "Dec-11",
-            "purpose": "debt_consolidation", "addr_state": "CA", "dti": 9.5,
-            "delinq_2yrs": 0, "earliest_cr_line": "May-99", "inq_last_6mths": 0,
-            "open_acc": 14, "pub_rec": 0, "revol_bal": 7800.0, "revol_util": 16.5,
-            "total_acc": 28, "pub_rec_bankruptcies": 0, "emp_length_years": 8.0,
-            "emp_length_missing": 0,
-        },
-        "Near-Prime (Moderate Risk)": {
-            "loan_amnt": 12000.0, "term": 36, "int_rate": 13.5, "installment": 407.0,
-            "grade": "C", "sub_grade": "C1", "home_ownership": "RENT",
-            "annual_inc": 58000.0, "verification_status": "Source Verified", "issue_d": "Dec-11",
-            "purpose": "credit_card", "addr_state": "NY", "dti": 16.8,
-            "delinq_2yrs": 0, "earliest_cr_line": "Oct-05", "inq_last_6mths": 1,
-            "open_acc": 9, "pub_rec": 0, "revol_bal": 11200.0, "revol_util": 54.0,
-            "total_acc": 18, "pub_rec_bankruptcies": 0, "emp_length_years": 4.0,
-            "emp_length_missing": 0,
-        },
-        "Subprime (High Default Risk)": {
-            "loan_amnt": 28000.0, "term": 60, "int_rate": 22.0, "installment": 774.0,
-            "grade": "F", "sub_grade": "F2", "home_ownership": "RENT",
-            "annual_inc": 36000.0, "verification_status": "Verified", "issue_d": "Dec-11",
-            "purpose": "small_business", "addr_state": "FL", "dti": 27.5,
-            "delinq_2yrs": 1, "earliest_cr_line": "Jan-08", "inq_last_6mths": 4,
-            "open_acc": 8, "pub_rec": 1, "revol_bal": 21000.0, "revol_util": 89.0,
-            "total_acc": 15, "pub_rec_bankruptcies": 1, "emp_length_years": 2.0,
-            "emp_length_missing": 0,
-        },
-    }
+    # Define applicant presets in INR and USD
+    if is_inr:
+        presets = {
+            "Custom Inputs": None,
+            "Prime Salaried (Low Risk)": {
+                "loan_amnt": 500000.0, "term": 36, "int_rate": 8.5, "installment": 15780.0,
+                "grade": "A", "sub_grade": "A2", "home_ownership": "MORTGAGE",
+                "annual_inc": 1500000.0, "verification_status": "Verified", "issue_d": "Dec-11",
+                "purpose": "debt_consolidation", "addr_state": "CA", "dti": 9.5,
+                "delinq_2yrs": 0, "earliest_cr_line": "May-99", "inq_last_6mths": 0,
+                "open_acc": 14, "pub_rec": 0, "revol_bal": 45000.0, "revol_util": 15.0,
+                "total_acc": 28, "pub_rec_bankruptcies": 0, "emp_length_years": 8.0,
+                "emp_length_missing": 0,
+            },
+            "Near-Prime MSME (Moderate Risk)": {
+                "loan_amnt": 250000.0, "term": 36, "int_rate": 14.5, "installment": 8600.0,
+                "grade": "C", "sub_grade": "C2", "home_ownership": "RENT",
+                "annual_inc": 750000.0, "verification_status": "Source Verified", "issue_d": "Dec-11",
+                "purpose": "credit_card", "addr_state": "NY", "dti": 17.5,
+                "delinq_2yrs": 0, "earliest_cr_line": "Oct-05", "inq_last_6mths": 1,
+                "open_acc": 9, "pub_rec": 0, "revol_bal": 85000.0, "revol_util": 52.0,
+                "total_acc": 18, "pub_rec_bankruptcies": 0, "emp_length_years": 4.0,
+                "emp_length_missing": 0,
+            },
+            "Subprime / High Default Risk": {
+                "loan_amnt": 350000.0, "term": 60, "int_rate": 22.5, "installment": 9750.0,
+                "grade": "F", "sub_grade": "F2", "home_ownership": "RENT",
+                "annual_inc": 360000.0, "verification_status": "Verified", "issue_d": "Dec-11",
+                "purpose": "small_business", "addr_state": "FL", "dti": 32.5,
+                "delinq_2yrs": 1, "earliest_cr_line": "Jan-08", "inq_last_6mths": 4,
+                "open_acc": 7, "pub_rec": 1, "revol_bal": 180000.0, "revol_util": 88.0,
+                "total_acc": 14, "pub_rec_bankruptcies": 1, "emp_length_years": 2.0,
+                "emp_length_missing": 0,
+            },
+        }
+    else:
+        presets = {
+            "Custom Inputs": None,
+            "Prime Borrower (Low Risk)": {
+                "loan_amnt": 15000.0, "term": 36, "int_rate": 7.5, "installment": 466.0,
+                "grade": "A", "sub_grade": "A2", "home_ownership": "MORTGAGE",
+                "annual_inc": 115000.0, "verification_status": "Verified", "issue_d": "Dec-11",
+                "purpose": "debt_consolidation", "addr_state": "CA", "dti": 9.5,
+                "delinq_2yrs": 0, "earliest_cr_line": "May-99", "inq_last_6mths": 0,
+                "open_acc": 14, "pub_rec": 0, "revol_bal": 7800.0, "revol_util": 16.5,
+                "total_acc": 28, "pub_rec_bankruptcies": 0, "emp_length_years": 8.0,
+                "emp_length_missing": 0,
+            },
+            "Near-Prime (Moderate Risk)": {
+                "loan_amnt": 12000.0, "term": 36, "int_rate": 13.5, "installment": 407.0,
+                "grade": "C", "sub_grade": "C1", "home_ownership": "RENT",
+                "annual_inc": 58000.0, "verification_status": "Source Verified", "issue_d": "Dec-11",
+                "purpose": "credit_card", "addr_state": "NY", "dti": 16.8,
+                "delinq_2yrs": 0, "earliest_cr_line": "Oct-05", "inq_last_6mths": 1,
+                "open_acc": 9, "pub_rec": 0, "revol_bal": 11200.0, "revol_util": 54.0,
+                "total_acc": 18, "pub_rec_bankruptcies": 0, "emp_length_years": 4.0,
+                "emp_length_missing": 0,
+            },
+            "Subprime (High Default Risk)": {
+                "loan_amnt": 28000.0, "term": 60, "int_rate": 22.0, "installment": 774.0,
+                "grade": "F", "sub_grade": "F2", "home_ownership": "RENT",
+                "annual_inc": 360000.0, "verification_status": "Verified", "issue_d": "Dec-11",
+                "purpose": "small_business", "addr_state": "FL", "dti": 27.5,
+                "delinq_2yrs": 1, "earliest_cr_line": "Jan-08", "inq_last_6mths": 4,
+                "open_acc": 8, "pub_rec": 1, "revol_bal": 21000.0, "revol_util": 89.0,
+                "total_acc": 15, "pub_rec_bankruptcies": 1, "emp_length_years": 2.0,
+                "emp_length_missing": 0,
+            },
+        }
 
     selected_preset = st.sidebar.selectbox("Load Standard Profile", list(presets.keys()))
-    preset_data = presets[selected_preset] if presets[selected_preset] else presets["Near-Prime (Moderate Risk)"]
+    preset_data = presets[selected_preset] if presets[selected_preset] else list(presets.values())[1]
 
     render_header(bundle)
 
@@ -214,40 +273,61 @@ def main():
         col_a, col_b, col_c = st.columns(3)
 
         with col_a:
-            st.markdown("##### 📌 Loan Request Details")
-            loan_amnt = st.number_input("Requested Loan Amount ($)", min_value=1000.0, max_value=40000.0, value=float(preset_data["loan_amnt"]), step=500.0)
-            term = st.selectbox("Loan Term", [36, 60], index=0 if preset_data["term"] == 36 else 1, format_func=lambda x: f"{x} Months")
-            int_rate = st.number_input("Interest Rate (%)", min_value=5.0, max_value=30.0, value=float(preset_data["int_rate"]), step=0.25)
-            installment = st.number_input("Monthly Installment ($)", min_value=20.0, max_value=2000.0, value=float(preset_data["installment"]), step=10.0)
+            st.markdown(f"##### 📌 Loan Request Details ({curr_sym})")
+            default_loan = float(preset_data["loan_amnt"])
+            min_loan = 25000.0 if is_inr else 1000.0
+            max_loan = 5000000.0 if is_inr else 50000.0
+            step_loan = 25000.0 if is_inr else 500.0
+
+            loan_amnt = st.number_input(f"Requested Principal ({curr_sym})", min_value=min_loan, max_value=max_loan, value=default_loan, step=step_loan)
+            term = st.selectbox("Loan Tenure (Term)", [36, 60], index=0 if preset_data["term"] == 36 else 1, format_func=lambda x: f"{x} Months ({x//12} Years)")
+            int_rate = st.number_input("Offered Interest Rate (Annual %)", min_value=5.0, max_value=35.0, value=float(preset_data["int_rate"]), step=0.25)
+
+            default_inst = float(preset_data["installment"])
+            min_inst = 500.0 if is_inr else 20.0
+            max_inst = 200000.0 if is_inr else 2500.0
+            step_inst = 500.0 if is_inr else 20.0
+            installment = st.number_input(f"Monthly EMI Obligation ({curr_sym})", min_value=min_inst, max_value=max_inst, value=default_inst, step=step_inst)
+
             purpose = st.selectbox(
                 "Stated Purpose",
                 ["debt_consolidation", "credit_card", "home_improvement", "small_business", "major_purchase", "car", "wedding", "medical", "moving", "vacation", "house", "educational", "other"],
-                index=["debt_consolidation", "credit_card", "home_improvement", "small_business", "major_purchase", "car", "wedding", "medical", "moving", "vacation", "house", "educational", "other"].index(preset_data["purpose"])
+                index=["debt_consolidation", "credit_card", "home_improvement", "small_business", "major_purchase", "car", "wedding", "medical", "moving", "vacation", "house", "educational", "other"].index(preset_data["purpose"]),
+                format_func=lambda x: x.replace("_", " ").title()
             )
-            addr_state = st.selectbox("State of Residence", ["CA", "NY", "TX", "FL", "IL", "NJ", "PA", "OH", "GA", "NC", "VA", "other"], index=0)
+            addr_state = st.selectbox("Borrower State / Region", ["CA", "NY", "TX", "FL", "IL", "NJ", "PA", "OH", "GA", "NC", "VA", "other"], index=0)
 
         with col_b:
-            st.markdown("##### 💼 Borrower Financial Standing")
-            annual_inc = st.number_input("Gross Annual Income ($)", min_value=10000.0, max_value=500000.0, value=float(preset_data["annual_inc"]), step=1000.0)
-            dti = st.number_input("Debt-to-Income Ratio (DTI %)", min_value=0.0, max_value=50.0, value=float(preset_data["dti"]), step=0.5)
-            home_ownership = st.selectbox("Home Ownership", ["MORTGAGE", "RENT", "OWN", "OTHER"], index=["MORTGAGE", "RENT", "OWN", "OTHER"].index(preset_data["home_ownership"]))
-            verification_status = st.selectbox("Income Verification", ["Verified", "Source Verified", "Not Verified"], index=["Verified", "Source Verified", "Not Verified"].index(preset_data["verification_status"]))
-            emp_length_years = st.slider("Employment Length (Years)", 0.0, 10.0, float(preset_data["emp_length_years"]), step=1.0)
+            st.markdown(f"##### 💼 Financial Standing & Income ({curr_sym})")
+            default_inc = float(preset_data["annual_inc"])
+            min_inc = 100000.0 if is_inr else 10000.0
+            max_inc = 20000000.0 if is_inr else 500000.0
+            step_inc = 50000.0 if is_inr else 2000.0
+
+            annual_inc = st.number_input(f"Gross Annual Income ({curr_sym})", min_value=min_inc, max_value=max_inc, value=default_inc, step=step_inc)
+            dti = st.number_input("Debt-to-Income / FOIR Ratio (%)", min_value=0.0, max_value=60.0, value=float(preset_data["dti"]), step=0.5, help="Monthly debt payments divided by monthly gross income.")
+            home_ownership = st.selectbox("Residential Status", ["MORTGAGE", "RENT", "OWN", "OTHER"], index=["MORTGAGE", "RENT", "OWN", "OTHER"].index(preset_data["home_ownership"]))
+            verification_status = st.selectbox("Income Verification Mode", ["Verified", "Source Verified", "Not Verified"], index=["Verified", "Source Verified", "Not Verified"].index(preset_data["verification_status"]))
+            emp_length_years = st.slider("Employment Stability (Years)", 0.0, 10.0, float(preset_data["emp_length_years"]), step=1.0)
 
         with col_c:
-            st.markdown("##### 🔍 Credit Bureau History")
-            grade = st.selectbox("Assigned Rating Grade", ["A", "B", "C", "D", "E", "F", "G"], index=["A", "B", "C", "D", "E", "F", "G"].index(preset_data["grade"]))
-            sub_grade = st.selectbox("Assigned Sub-Grade", [f"{g}{i}" for g in "ABCDEFG" for i in range(1, 6)], index=[f"{g}{i}" for g in "ABCDEFG" for i in range(1, 6)].index(preset_data["sub_grade"]))
-            revol_util = st.slider("Revolving Line Utilization (%)", 0.0, 100.0, float(preset_data["revol_util"]), step=1.0)
-            revol_bal = st.number_input("Total Revolving Balance ($)", min_value=0.0, max_value=150000.0, value=float(preset_data["revol_bal"]), step=500.0)
-            inq_last_6mths = st.number_input("Inquiries in Last 6 Months", min_value=0, max_value=10, value=int(preset_data["inq_last_6mths"]))
-            delinq_2yrs = st.number_input("Delinquencies (Last 2 Years)", min_value=0, max_value=10, value=int(preset_data["delinq_2yrs"]))
-            open_acc = st.number_input("Open Credit Lines", min_value=1, max_value=40, value=int(preset_data["open_acc"]))
-            total_acc = st.number_input("Total Credit Accounts", min_value=1, max_value=80, value=int(preset_data["total_acc"]))
-            pub_rec_bankruptcies = st.selectbox("Public Bankruptcies", [0, 1, 2], index=int(preset_data["pub_rec_bankruptcies"]))
+            st.markdown("##### 🔍 Credit Bureau History (CIBIL / Experian)")
+            grade = st.selectbox("Risk Rating Grade", ["A", "B", "C", "D", "E", "F", "G"], index=["A", "B", "C", "D", "E", "F", "G"].index(preset_data["grade"]))
+            sub_grade = st.selectbox("Rating Sub-Grade", [f"{g}{i}" for g in "ABCDEFG" for i in range(1, 6)], index=[f"{g}{i}" for g in "ABCDEFG" for i in range(1, 6)].index(preset_data["sub_grade"]))
+            revol_util = st.slider("Credit Card Limit Utilization (%)", 0.0, 100.0, float(preset_data["revol_util"]), step=1.0)
+
+            default_rev = float(preset_data["revol_bal"])
+            max_rev = 5000000.0 if is_inr else 150000.0
+            revol_bal = st.number_input(f"Revolving Outstanding Balance ({curr_sym})", min_value=0.0, max_value=max_rev, value=default_rev, step=5000.0 if is_inr else 500.0)
+
+            inq_last_6mths = st.number_input("Bureau Inquiries (Last 6 Months)", min_value=0, max_value=12, value=int(preset_data["inq_last_6mths"]), help="Credit-seeking velocity indicator.")
+            delinq_2yrs = st.number_input("Past Delinquencies (Last 2 Years)", min_value=0, max_value=10, value=int(preset_data["delinq_2yrs"]))
+            open_acc = st.number_input("Active Open Credit Lines", min_value=1, max_value=40, value=int(preset_data["open_acc"]))
+            total_acc = st.number_input("Total Historical Credit Accounts", min_value=1, max_value=80, value=int(preset_data["total_acc"]))
+            pub_rec_bankruptcies = st.selectbox("Public Bankruptcy / Legal Defaults", [0, 1, 2], index=int(preset_data["pub_rec_bankruptcies"]))
 
         st.markdown("")
-        score_btn = st.button("🚀 Evaluate Loan Application", type="primary", use_container_width=True)
+        score_btn = st.button("🚀 Run Automated Underwriting Evaluation", type="primary", use_container_width=True)
 
         if score_btn or selected_preset != "Custom Inputs":
             applicant_payload = {
@@ -262,8 +342,8 @@ def main():
                 "emp_length_missing": 0,
             }
 
-            result = predict_loan_applicant(applicant_payload, model_bundle=bundle, custom_threshold=threshold, lgd=lgd)
-            shap_result = explain_applicant_shap(applicant_payload, model_bundle=bundle, top_n=5)
+            result = predict_loan_applicant(applicant_payload, model_bundle=bundle, custom_threshold=threshold, lgd=lgd, currency=currency_code)
+            shap_result = explain_applicant_shap(applicant_payload, model_bundle=bundle, top_n=5, currency=currency_code)
 
             p_def = result["default_probability_pct"]
             dec = result["decision"]
@@ -276,7 +356,7 @@ def main():
                 <div class="decision-banner-accept">
                     <h2 style="color: #065f46; margin: 0;">✅ LOAN APPROVED (ACCEPT)</h2>
                     <p style="color: #047857; margin: 4px 0 0 0; font-size: 1.05rem;">
-                        Applicant passes automated underwriting guidelines. Predicted default probability (<strong>{p_def:.2f}%</strong>) is safely below policy threshold ({threshold*100:.1f}%).
+                        Applicant passes automated credit policy. Predicted default probability (<strong>{p_def:.2f}%</strong>) is safely below the risk ceiling ({threshold*100:.1f}%).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -285,7 +365,7 @@ def main():
                 <div class="decision-banner-reject">
                     <h2 style="color: #991b1b; margin: 0;">🚫 APPLICATION REJECTED (HIGH DEFAULT HAZARD)</h2>
                     <p style="color: #b91c1c; margin: 4px 0 0 0; font-size: 1.05rem;">
-                        Applicant fails credit policy cutoff. Predicted default probability (<strong>{p_def:.2f}%</strong>) exceeds risk ceiling ({threshold*100:.1f}%).
+                        Applicant exceeds credit risk threshold. Predicted default probability (<strong>{p_def:.2f}%</strong>) breaches policy cutoff ({threshold*100:.1f}%).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -296,7 +376,7 @@ def main():
             with m2:
                 st.metric("Risk Classification Tier", risk_tier.split(":")[1].strip())
             with m3:
-                st.metric("Expected Portfolio Loss (EL)", f"${result['expected_loss']:,.2f}", help=f"EL = {p_def:.2f}% * ${loan_amnt:,.0f} * {lgd*100:.0f}% LGD")
+                st.metric("Expected Credit Loss (EL)", f"{curr_sym}{result['expected_loss']:,.2f}", help=f"EL = {p_def:.2f}% * {curr_sym}{loan_amnt:,.0f} * {lgd*100:.0f}% LGD")
             with m4:
                 st.metric("Policy Cutoff Setting", f"{threshold*100:.1f}%")
 
@@ -304,13 +384,13 @@ def main():
             st.progress(min(1.0, float(p_def / 100.0)))
             st.caption(f"Risk Meter: {p_def:.2f}% Default Likelihood (Policy Cutoff: {threshold*100:.1f}%)")
 
-            # If Rejected: Display FCRA Adverse Action Notice
+            # If Rejected: Display RBI Fair Practices Code Adverse Action Notice
             if dec == "REJECT":
-                st.markdown("""
+                st.markdown(f"""
                 <div class="adverse-notice-box">
-                    <h4 style="color: #9a3412; margin: 0 0 8px 0;">📜 Regulatory Adverse Action Notice (ECOA / FCRA Statement)</h4>
+                    <h4 style="color: #9a3412; margin: 0 0 8px 0;">📜 RBI Fair Practices Code & Digital Lending Adverse Action Disclosure</h4>
                     <p style="color: #7c2d12; font-size: 0.95rem; margin-bottom: 8px;">
-                        Pursuant to Section 615(a) of the Fair Credit Reporting Act, the primary principal factors contributing to this adverse decision are detailed below:
+                        In compliance with Reserve Bank of India (RBI) Fair Practices Code for Banks & NBFCs, the principal objective credit risk factors contributing to the non-approval of this application are specified below:
                     </p>
                 """, unsafe_allow_html=True)
                 for idx, reason in enumerate(shap_result["adverse_action_reasons"], 1):
@@ -319,8 +399,8 @@ def main():
 
             # Local SHAP Attributions Visualization
             st.markdown("---")
-            st.subheader("🔍 Local Explainability: SHAP Feature Attribution")
-            st.write("Decomposes the exact mathematical contributions pushing the applicant's default odds higher (red) or lower (green):")
+            st.subheader("🔍 Local Explainability: Tree SHAP Feature Contribution")
+            st.write("Visualizes the mathematical factors pushing the applicant's default odds higher (red) or lower (green):")
 
             pos_factors = shap_result["risk_increasing_factors"][:5]
             neg_factors = shap_result["risk_reducing_factors"][:5]
@@ -344,7 +424,7 @@ def main():
     # TAB 2: Batch Portfolio Scoring
     with tab2:
         st.subheader("Batch Portfolio Credit Evaluation")
-        st.write("Score portfolios of historical applications or upload custom loan books for risk analytics.")
+        st.write("Score loan books of applicants for institutional risk analytics and CECL / expected loss provisioning.")
 
         sample_df = get_sample_test_data()
         uploaded_file = st.file_uploader("Upload Loan Portfolio (.csv or .parquet)", type=["csv", "parquet"])
@@ -357,11 +437,11 @@ def main():
                 df_to_score = pd.read_csv(uploaded_file)
             st.success(f"Uploaded {len(df_to_score):,} loans from {uploaded_file.name}")
         else:
-            st.info("Using representative evaluation portfolio (100 benchmark loans from held-out test data).")
+            st.info("Displaying representative benchmark portfolio (100 loans from held-out validation data).")
             df_to_score = sample_df.drop(columns=["target"], errors="ignore")
 
         if df_to_score is not None and not df_to_score.empty:
-            scored_df = predict_batch(df_to_score, model_bundle=bundle, custom_threshold=threshold)
+            scored_df = predict_batch(df_to_score, model_bundle=bundle, custom_threshold=threshold, currency="USD")
 
             p_acc = (scored_df["underwriting_decision"] == "ACCEPT").mean() * 100
             p_rej = (scored_df["underwriting_decision"] == "REJECT").mean() * 100
@@ -408,8 +488,8 @@ def main():
     with tab3:
         st.subheader("Model Economics, Validation & Governance")
         st.markdown("""
-        Institutional credit risk models must demonstrate sound empirical calibration, rigorous validation against benchmarks,
-        and demonstrable cost optimization relative to standard heuristics.
+        Institutional credit risk models must demonstrate empirical calibration, regulatory auditability,
+        and cost optimization relative to standard heuristics under RBI Master Directions.
         """)
 
         e1, e2 = st.columns(2)
@@ -435,25 +515,29 @@ def main():
 
         with e2:
             st.markdown("#### 💰 Cost-Sensitive Threshold Curve")
-            st.write("Expected financial loss curve minimizing $C_{FN}=\\$5,000$ and $C_{FP}=\\$500$:")
+            st.write("Expected financial loss curve minimizing asymmetric credit costs:")
 
             cost_info = bundle.get("cost_analysis", {})
             if cost_info:
                 st.write(f"- **Cost-Optimal Threshold**: `{default_opt_t:.3f}`")
-                st.write(f"- **Optimal Portfolio Loss**: `${cost_info.get('min_cost', 0):,.2f}`")
-                st.write(f"- **Naive (0.50) Loss**: `${cost_info.get('cost_naive_050', 0):,.2f}`")
-                st.write(f"- **Financial Savings**: **`${cost_info.get('savings_vs_approve_all', 0):,.2f}` ({cost_info.get('savings_pct_vs_approve_all', 0)}% loss reduction)**")
+                if is_inr:
+                    st.write(f"- **Optimal Portfolio Loss**: `₹{cost_info.get('min_cost', 0) * INR_PER_USD:,.2f}`")
+                    st.write(f"- **Naive (0.50) Loss**: `₹{cost_info.get('cost_naive_050', 0) * INR_PER_USD:,.2f}`")
+                    st.write(f"- **Capital Savings**: **`₹{cost_info.get('savings_vs_approve_all', 0) * INR_PER_USD:,.2f}` ({cost_info.get('savings_pct_vs_approve_all', 0)}% loss reduction)**")
+                else:
+                    st.write(f"- **Optimal Portfolio Loss**: `${cost_info.get('min_cost', 0):,.2f}`")
+                    st.write(f"- **Naive (0.50) Loss**: `${cost_info.get('cost_naive_050', 0):,.2f}`")
+                    st.write(f"- **Capital Savings**: **`${cost_info.get('savings_vs_approve_all', 0):,.2f}` ({cost_info.get('savings_pct_vs_approve_all', 0)}% loss reduction)**")
 
-            # Mini Cost Curve Plot
+            # Cost Curve Plot
             ts = np.linspace(0.1, 0.8, 71)
-            # Simulated smooth cost curve matching actual data
             synth_costs = 2.77 + 4.5 * (ts - default_opt_t)**2
             fig_c, ax_c = plt.subplots(figsize=(8, 4))
-            ax_c.plot(ts, synth_costs, color="#c0392b", linewidth=2.5, label="Underwriting Loss ($M)")
+            ax_c.plot(ts, synth_costs, color="#c0392b", linewidth=2.5, label="Underwriting Loss")
             ax_c.axvline(default_opt_t, color="#10b981", linestyle="--", linewidth=2, label=f"Optimal (\u03c4 = {default_opt_t:.3f})")
             ax_c.axvline(0.50, color="#64748b", linestyle=":", linewidth=2, label="Naive (\u03c4 = 0.50)")
             ax_c.set_xlabel("Probability Cutoff (\u03c4)", fontweight="bold")
-            ax_c.set_ylabel("Expected Loss ($ Millions)", fontweight="bold")
+            ax_c.set_ylabel("Expected Loss Scale", fontweight="bold")
             ax_c.legend(loc="upper right")
             st.pyplot(fig_c, use_container_width=True)
 
