@@ -47,3 +47,12 @@ Thumbs.db
 
 # Streamlit temporary config / credentials
 .streamlit/secrets.toml
+
+# Frontend & Node
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+frontend/.vite/
+*.log

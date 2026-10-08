@@ -35,7 +35,7 @@ from src.predict import (
 
 # Page configuration
 st.set_page_config(
-    page_title="RBI-Compliant Credit Underwriting Engine",
+    page_title="CreditLens — RBI-Compliant Credit Underwriting Engine",
     page_icon="💳",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -128,7 +128,7 @@ def get_sample_test_data():
 
 def render_header(bundle):
     st.markdown('<span class="badge-rbi">RBI FAIR PRACTICES CODE & DIGITAL LENDING COMPLIANT</span>', unsafe_allow_html=True)
-    st.markdown('<div class="main-title">💳 Institutional Credit Risk & Underwriting Engine</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">💳 CreditLens — Institutional Credit Risk & Underwriting Engine</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Production ML inference engine with automated cost-sensitive credit decisions, SHAP attributions, and RBI-mandated adverse action disclosures.</div>', unsafe_allow_html=True)
 
     col1, col2, col3, col4, col5 = st.columns(5)
