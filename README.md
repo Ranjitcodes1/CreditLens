@@ -1,5 +1,11 @@
 # CreditLens — Institutional Credit Risk & Explainable AI Underwriting Engine
 
+[![Live Web Studio](https://img.shields.io/badge/Live%20Demo-credit--lens--iota.vercel.app-10b981?style=for-the-badge&logo=vercel)](https://credit-lens-iota.vercel.app)
+[![RBI Compliant](https://img.shields.io/badge/RBI-Digital%20Lending%202023-6366f1?style=for-the-badge)](https://credit-lens-iota.vercel.app)
+[![LightGBM](https://img.shields.io/badge/Algorithm-LightGBM%20v1.0-3b82f6?style=for-the-badge)](https://credit-lens-iota.vercel.app)
+
+> 🚀 **Live Production Link:** **[https://credit-lens-iota.vercel.app](https://credit-lens-iota.vercel.app)**
+
 An end-to-end, production-grade machine learning credit underwriting platform compliant with the **Reserve Bank of India (RBI) Digital Lending Guidelines (2022/2023)**, **Fair Practices Code for NBFCs**, and **CICRA 2005 Bureau Reporting Standards**.
 
 CreditLens bridges calibrated risk estimation ($Cost_{\text{FN}} = 10 \times Cost_{\text{FP}}$) with explainable TreeSHAP attributions and features a dual-interface architecture: a **state-of-the-art React 18 + Vite + Tailwind CSS web studio** and an **interactive Streamlit data science portal**.
